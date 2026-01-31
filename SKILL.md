@@ -1,6 +1,6 @@
 ---
 name: otp-challenger
-version: 1.1.0
+version: 1.0.1
 description: Enable agents and skills to challenge users for fresh two-factor authentication proof before executing sensitive actions. Use this for identity verification in approval workflows - deploy commands, financial operations, data access, admin operations, and change control.
 metadata: {"openclaw": {"emoji": "🔐", "homepage": "https://github.com/ryancnelson/otp-challenger", "requires": {"bins": ["jq", "python3"], "anyBins": ["oathtool", "node"]}, "install": [{"id": "jq", "kind": "brew", "formula": "jq", "bins": ["jq"], "label": "Install jq via Homebrew", "os": ["darwin", "linux"]}, {"id": "python3", "kind": "brew", "formula": "python3", "bins": ["python3"], "label": "Install Python 3 via Homebrew", "os": ["darwin", "linux"]}, {"id": "oathtool", "kind": "brew", "formula": "oath-toolkit", "bins": ["oathtool"], "label": "Install OATH Toolkit via Homebrew", "os": ["darwin", "linux"]}]}}
 ---
