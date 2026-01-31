@@ -15,6 +15,23 @@ WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw}"
 STATE_FILE="$WORKSPACE/memory/otp-state.json"
 CONFIG_FILE="${CONFIG_FILE:-${OPENCLAW_CONFIG:-$HOME/.openclaw/config.yaml}}"
 AUDIT_LOG="${OTP_AUDIT_LOG:-$WORKSPACE/memory/otp-audit.log}"
+FAILURE_HOOK="${OTP_FAILURE_HOOK:-}"
+
+# Run failure hook if configured
+run_failure_hook() {
+  local event="$1"
+  local user_id="$2"
+  local failure_count="$3"
+
+  if [ -n "$FAILURE_HOOK" ]; then
+    # Run hook with environment variables (don't pass as args to avoid injection)
+    OTP_HOOK_EVENT="$event" \
+    OTP_HOOK_USER="$user_id" \
+    OTP_HOOK_FAILURE_COUNT="$failure_count" \
+    OTP_HOOK_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    $FAILURE_HOOK &
+  fi
+}
 
 # Audit logging function
 audit_log() {
@@ -158,7 +175,8 @@ if [ -f "$STATE_FILE" ]; then
     # Check if still within rate limit window
     TIME_SINCE=$((NOW_MS - FAILURE_SINCE))
     if [ "$TIME_SINCE" -lt "$RATE_LIMIT_WINDOW" ]; then
-      audit_log "VERIFY" "$USER_ID" "VERIFY_FAIL"
+      audit_log "VERIFY" "$USER_ID" "RATE_LIMIT_HIT"
+      run_failure_hook "RATE_LIMIT_HIT" "$USER_ID" "$FAILURE_COUNT"
       echo "❌ Too many attempts. Try again later." >&2
       exit 1
     fi
@@ -182,7 +200,10 @@ if [ "$CODE" != "$EXPECTED" ]; then
   if [ "$CODE" != "$EXPECTED_PREV" ] && [ "$CODE" != "$EXPECTED_NEXT" ]; then
     FAIL_NOW_MS=$(date +%s)000
     record_failure "$USER_ID" "$FAIL_NOW_MS"
+    # Get updated failure count for hook
+    NEW_FAILURE_COUNT=$(jq -r --arg userId "$USER_ID" '.failureCounts[$userId].count // 0' "$STATE_FILE")
     audit_log "VERIFY" "$USER_ID" "VERIFY_FAIL"
+    run_failure_hook "VERIFY_FAIL" "$USER_ID" "$NEW_FAILURE_COUNT"
     echo "❌ Invalid OTP code" >&2
     exit 1
   fi

@@ -1,6 +1,6 @@
 ---
 name: otp-challenger
-version: 1.0.1
+version: 1.1.0
 description: Enable agents and skills to challenge users for fresh two-factor authentication proof before executing sensitive actions. Use this for identity verification in approval workflows - deploy commands, financial operations, data access, admin operations, and change control.
 metadata: {"openclaw": {"emoji": "🔐", "homepage": "https://github.com/ryancnelson/otp-challenger", "requires": {"bins": ["jq", "python3"], "anyBins": ["oathtool", "node"]}, "install": [{"id": "jq", "kind": "brew", "formula": "jq", "bins": ["jq"], "label": "Install jq via Homebrew", "os": ["darwin", "linux"]}, {"id": "python3", "kind": "brew", "formula": "python3", "bins": ["python3"], "label": "Install Python 3 via Homebrew", "os": ["darwin", "linux"]}, {"id": "oathtool", "kind": "brew", "formula": "oath-toolkit", "bins": ["oathtool"], "label": "Install OATH Toolkit via Homebrew", "os": ["darwin", "linux"]}]}}
 ---
@@ -193,6 +193,8 @@ Set these in your OpenClaw config or environment:
 - **`OTP_INTERVAL_HOURS`** - Verification expiry (default: 24)
 - **`OTP_GRACE_PERIOD_MINUTES`** - Grace period after expiry (default: 15)
 - **`OTP_STATE_FILE`** - State file path (default: `memory/otp-state.json`)
+- **`OTP_MAX_FAILURES`** - Failed attempts before rate limiting (default: 3)
+- **`OTP_FAILURE_HOOK`** - Script/command to run on failures (see below)
 
 ## Security Considerations
 
@@ -299,6 +301,48 @@ fi
 
 echo "✅ Processing transfer of \$$AMOUNT to $RECIPIENT"
 # ... transfer logic ...
+```
+
+### Failure Hook - Alert or Shutdown on Failed Attempts
+
+Configure `OTP_FAILURE_HOOK` to run a script when verification fails. Use this to:
+- Send alerts (Slack, email, PagerDuty)
+- Shut down OpenClaw if someone's impersonating you
+- Log to external security systems
+
+The hook receives these environment variables:
+- `OTP_HOOK_EVENT` - `VERIFY_FAIL` (bad code) or `RATE_LIMIT_HIT` (too many failures)
+- `OTP_HOOK_USER` - The user ID that failed
+- `OTP_HOOK_FAILURE_COUNT` - Number of consecutive failures
+- `OTP_HOOK_TIMESTAMP` - ISO 8601 timestamp
+
+```bash
+# Example: Shut down OpenClaw after 3 failures (impersonation defense)
+export OTP_FAILURE_HOOK="/path/to/shutdown-if-impersonator.sh"
+```
+
+```bash
+#!/bin/bash
+# shutdown-if-impersonator.sh
+if [ "$OTP_HOOK_EVENT" = "RATE_LIMIT_HIT" ]; then
+  echo "🚨 OTP rate limit hit for $OTP_HOOK_USER at $OTP_HOOK_TIMESTAMP" | \
+    slack-notify "#alerts"
+  # Kill OpenClaw - someone's at my desk pretending to be me
+  pkill -f openclaw
+fi
+```
+
+```bash
+# Example: Alert on every failure
+export OTP_FAILURE_HOOK="notify-failure.sh"
+```
+
+```bash
+#!/bin/bash
+# notify-failure.sh
+curl -X POST "$SLACK_WEBHOOK" -d "{
+  \"text\": \"⚠️ OTP $OTP_HOOK_EVENT: user=$OTP_HOOK_USER failures=$OTP_HOOK_FAILURE_COUNT\"
+}"
 ```
 
 ## Philosophy
