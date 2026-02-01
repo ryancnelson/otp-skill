@@ -234,7 +234,7 @@ Agent: ✅ Identity verified. Deploying to production...
 
 ## Scripts
 
-- **`verify.sh <user_id> <code>`** - Verify OTP code and update state
+- **`verify.sh <user_id> <code>`** - Verify OTP code (TOTP or YubiKey) and update state
 - **`check-status.sh <user_id>`** - Check if user verification is still valid
 - **`generate-secret.sh <account_name>`** - Generate new TOTP secret
 - **`get-current-code.sh <secret>`** - Get current valid code (testing only)
