@@ -286,6 +286,15 @@ Set these in your OpenClaw config or environment:
 - **Code length**: 6 digits
 - **Clock skew**: ±1 window tolerance (90 seconds total)
 
+### YubiKey OTP Implementation
+
+- **API**: Yubico Cloud (api.yubico.com)
+- **Protocol**: HMAC-SHA1 signed requests
+- **OTP Format**: 44-character ModHex (alphabet: cbdefghijklnrtuv)
+- **Public ID**: First 12 characters identify the physical key
+- **Replay Protection**: Handled by Yubico servers
+- **Network**: Requires HTTPS to api.yubico.com
+
 ### State Management
 
 Verification state is stored in `memory/otp-state.json`:
