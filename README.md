@@ -29,6 +29,7 @@ When your agent needs to execute something sensitive, it challenges the user to 
 
 source ../otp/verify.sh
 
+# Works with both 6-digit TOTP codes and YubiKey OTP
 if ! verify_otp "$USER" "$OTP_CODE"; then
   echo "🔒 Production deployment requires OTP verification"
   exit 1
@@ -42,6 +43,7 @@ kubectl apply -f production.yaml
 
 See **[SKILL.md](./SKILL.md)** for complete documentation:
 - Installation & setup
+- TOTP and YubiKey configuration
 - Usage examples
 - Security considerations
 - Configuration options
