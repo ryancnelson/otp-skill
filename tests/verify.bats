@@ -352,7 +352,7 @@ EOF
   # Audit log should exist and contain entry
   [ -f "$AUDIT_LOG" ]
   grep -q "user1" "$AUDIT_LOG"
-  grep -q "VERIFY_SUCCESS" "$AUDIT_LOG"
+  grep -q "TOTP_SUCCESS" "$AUDIT_LOG"
 }
 
 @test "verify.sh: logs failed verification attempts" {
@@ -365,7 +365,7 @@ EOF
 
   [ -f "$AUDIT_LOG" ]
   grep -q "user1" "$AUDIT_LOG"
-  grep -q "VERIFY_FAIL" "$AUDIT_LOG"
+  grep -q "TOTP_FAIL" "$AUDIT_LOG"
 }
 
 @test "verify.sh: audit log includes timestamp and result" {
