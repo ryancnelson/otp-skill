@@ -618,3 +618,40 @@ EOF
   [ "$status" -eq 2 ]
   [[ "$output" =~ "Invalid code format" ]]
 }
+
+@test "verify.sh: requires YUBIKEY_CLIENT_ID for YubiKey OTP" {
+  export YUBIKEY_SECRET_KEY="testsecretkey"
+  unset YUBIKEY_CLIENT_ID
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "YUBIKEY_CLIENT_ID not set" ]]
+}
+
+@test "verify.sh: requires YUBIKEY_SECRET_KEY for YubiKey OTP" {
+  export YUBIKEY_CLIENT_ID="12345"
+  unset YUBIKEY_SECRET_KEY
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "YUBIKEY_SECRET_KEY not set" ]]
+}
+
+@test "verify.sh: does not require YUBIKEY credentials for TOTP" {
+  # TOTP should work without YubiKey credentials set
+  unset YUBIKEY_CLIENT_ID
+  unset YUBIKEY_SECRET_KEY
+  CODE=$(get_valid_code)
+  run bash "$VERIFY_SCRIPT" "user1" "$CODE"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "✅ OTP verified" ]]
+}
+
+@test "verify.sh: does not require OTP_SECRET for YubiKey" {
+  # YubiKey should not fail due to missing OTP_SECRET
+  unset OTP_SECRET
+  export YUBIKEY_CLIENT_ID="12345"
+  export YUBIKEY_SECRET_KEY="testsecretkey"
+  # Will fail at API call, but should not fail at secret check
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  # Should get past config validation (not exit 2 for OTP_SECRET)
+  [[ ! "$output" =~ "OTP_SECRET not set" ]]
+}
