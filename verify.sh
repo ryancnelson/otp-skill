@@ -74,6 +74,113 @@ reset_failures() {
   # Just ensure we remove the failure count
 }
 
+# Detect code type based on format
+# Returns: "totp", "yubikey", or "unknown"
+detect_code_type() {
+  local code="$1"
+  # YubiKey OTP: exactly 44 ModHex characters (cbdefghijklnrtuv)
+  if [[ "$code" =~ ^[cbdefghijklnrtuv]{44}$ ]]; then
+    echo "yubikey"
+  # TOTP: exactly 6 digits
+  elif [[ "$code" =~ ^[0-9]{6}$ ]]; then
+    echo "totp"
+  else
+    echo "unknown"
+  fi
+}
+
+# Validate YubiKey OTP against Yubico Cloud API
+# Returns: 0 for valid, 1 for invalid, 2 for config/network error
+validate_yubikey() {
+  local otp="$1"
+  local client_id="$2"
+  local secret_key_b64="$3"
+
+  # Decode the base64-encoded secret key (Yubico provides it base64-encoded)
+  local secret_key
+  secret_key=$(printf '%s' "$secret_key_b64" | base64 -d 2>/dev/null)
+  if [ -z "$secret_key" ]; then
+    echo "ERROR: Failed to decode YUBIKEY_SECRET_KEY (must be valid base64)" >&2
+    return 2
+  fi
+
+  # Generate random nonce (16 chars, alphanumeric)
+  local nonce
+  nonce=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)
+
+  # Build parameters for signing (alphabetically sorted)
+  local params="id=${client_id}&nonce=${nonce}&otp=${otp}"
+
+  # Generate HMAC-SHA1 signature using decoded secret key
+  local signature
+  signature=$(printf '%s' "$params" | openssl dgst -sha1 -hmac "$secret_key" -binary | base64)
+
+  # URL-encode the signature (+ and / and = need encoding)
+  local signature_encoded
+  signature_encoded=$(printf '%s' "$signature" | sed 's/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+
+  # Call Yubico API
+  local response
+  response=$(curl -s --max-time 10 "https://api.yubico.com/wsapi/2.0/verify?${params}&h=${signature_encoded}" 2>/dev/null)
+
+  if [ -z "$response" ]; then
+    echo "ERROR: Failed to contact Yubico API (network error or timeout)" >&2
+    return 2
+  fi
+
+  # Parse response fields (format: key=value per line)
+  local resp_status resp_nonce resp_otp
+  resp_status=$(echo "$response" | grep -E '^status=' | cut -d'=' -f2 | tr -d '\r')
+  resp_nonce=$(echo "$response" | grep -E '^nonce=' | cut -d'=' -f2 | tr -d '\r')
+  resp_otp=$(echo "$response" | grep -E '^otp=' | cut -d'=' -f2 | tr -d '\r')
+
+  # Verify nonce matches (prevents replay attacks on API responses)
+  if [ "$resp_nonce" != "$nonce" ]; then
+    echo "ERROR: YubiKey API nonce mismatch (possible MITM attack)" >&2
+    return 2
+  fi
+
+  # Verify OTP in response matches what we sent
+  if [ "$resp_otp" != "$otp" ]; then
+    echo "ERROR: YubiKey API OTP mismatch in response" >&2
+    return 2
+  fi
+
+  case "$resp_status" in
+    OK)
+      return 0
+      ;;
+    REPLAYED_OTP)
+      echo "❌ YubiKey OTP already used (replay attack prevented)" >&2
+      return 1
+      ;;
+    BAD_OTP)
+      echo "❌ Invalid YubiKey OTP" >&2
+      return 1
+      ;;
+    BAD_SIGNATURE)
+      echo "ERROR: YubiKey API signature mismatch (check YUBIKEY_SECRET_KEY)" >&2
+      return 2
+      ;;
+    NO_SUCH_CLIENT)
+      echo "ERROR: Invalid YUBIKEY_CLIENT_ID" >&2
+      return 2
+      ;;
+    MISSING_PARAMETER|OPERATION_NOT_ALLOWED)
+      echo "ERROR: YubiKey API request error: $resp_status" >&2
+      return 2
+      ;;
+    BACKEND_ERROR|NOT_ENOUGH_ANSWERS)
+      echo "ERROR: Yubico API backend error. Try again." >&2
+      return 2
+      ;;
+    *)
+      echo "ERROR: Unexpected YubiKey API response: $resp_status" >&2
+      return 2
+      ;;
+  esac
+}
+
 USER_ID="${1}"
 CODE="${2}"
 
@@ -82,9 +189,11 @@ if [ -z "$USER_ID" ] || [ -z "$CODE" ]; then
   exit 2
 fi
 
-# Validate OTP code format (must be exactly 6 digits)
-if ! [[ "$CODE" =~ ^[0-9]{6}$ ]]; then
-  echo "ERROR: Code must be exactly 6 digits" >&2
+# Detect and validate code format
+CODE_TYPE=$(detect_code_type "$CODE")
+
+if [ "$CODE_TYPE" = "unknown" ]; then
+  echo "ERROR: Invalid code format. Expected 6-digit TOTP or 44-character YubiKey OTP" >&2
   exit 2
 fi
 
@@ -118,29 +227,81 @@ except Exception:
   fi
 fi
 
-if [ -z "$SECRET" ]; then
+# Get YubiKey credentials from environment or config
+YUBIKEY_CLIENT_ID="${YUBIKEY_CLIENT_ID:-}"
+YUBIKEY_SECRET_KEY="${YUBIKEY_SECRET_KEY:-}"
+
+if [ -z "$YUBIKEY_CLIENT_ID" ] && [ -f "$CONFIG_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    YUBIKEY_CLIENT_ID=$(python3 -c "
+import sys
+try:
+    import yaml
+    with open('$CONFIG_FILE', 'r') as f:
+        config = yaml.safe_load(f)
+    client_id = config.get('security', {}).get('yubikey', {}).get('clientId', '')
+    print(client_id if client_id else '')
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+fi
+
+if [ -z "$YUBIKEY_SECRET_KEY" ] && [ -f "$CONFIG_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    YUBIKEY_SECRET_KEY=$(python3 -c "
+import sys
+try:
+    import yaml
+    with open('$CONFIG_FILE', 'r') as f:
+        config = yaml.safe_load(f)
+    secret_key = config.get('security', {}).get('yubikey', {}).get('secretKey', '')
+    print(secret_key if secret_key else '')
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+fi
+
+# Validate required credentials based on code type
+if [ "$CODE_TYPE" = "totp" ] && [ -z "$SECRET" ]; then
   echo "ERROR: OTP_SECRET not set. Configure in environment or ~/.openclaw/config.yaml" >&2
   exit 2
 fi
 
-# Validate secret format (base32: A-Z, 2-7, optional = padding, 16-128 chars)
-if [ "${#SECRET}" -lt 16 ] || [ "${#SECRET}" -gt 128 ]; then
-  echo "ERROR: Secret length must be 16-128 characters" >&2
-  exit 2
+if [ "$CODE_TYPE" = "yubikey" ]; then
+  if [ -z "$YUBIKEY_CLIENT_ID" ]; then
+    echo "ERROR: YUBIKEY_CLIENT_ID not set. Configure in environment or ~/.openclaw/config.yaml" >&2
+    exit 2
+  fi
+  if [ -z "$YUBIKEY_SECRET_KEY" ]; then
+    echo "ERROR: YUBIKEY_SECRET_KEY not set. Configure in environment or ~/.openclaw/config.yaml" >&2
+    exit 2
+  fi
 fi
 
-if ! [[ "$SECRET" =~ ^[A-Z2-7]+=*$ ]]; then
-  echo "ERROR: Secret must be base32 encoded (A-Z, 2-7, optional = padding)" >&2
-  exit 2
+# Validate secret format for TOTP (base32: A-Z, 2-7, optional = padding, 16-128 chars)
+if [ "$CODE_TYPE" = "totp" ]; then
+  if [ "${#SECRET}" -lt 16 ] || [ "${#SECRET}" -gt 128 ]; then
+    echo "ERROR: Secret length must be 16-128 characters" >&2
+    exit 2
+  fi
+
+  if ! [[ "$SECRET" =~ ^[A-Z2-7]+=*$ ]]; then
+    echo "ERROR: Secret must be base32 encoded (A-Z, 2-7, optional = padding)" >&2
+    exit 2
+  fi
 fi
 
-# Check if oathtool is available
-if ! command -v oathtool &> /dev/null; then
-  echo "ERROR: oathtool not found. Install with:" >&2
-  echo "  macOS:  brew install oath-toolkit" >&2
-  echo "  Fedora: sudo dnf install oathtool" >&2
-  echo "  Ubuntu: sudo apt-get install oathtool" >&2
-  exit 2
+# Check if oathtool is available (only needed for TOTP)
+if [ "$CODE_TYPE" = "totp" ]; then
+  if ! command -v oathtool &> /dev/null; then
+    echo "ERROR: oathtool not found. Install with:" >&2
+    echo "  macOS:  brew install oath-toolkit" >&2
+    echo "  Fedora: sudo dnf install oathtool" >&2
+    echo "  Ubuntu: sudo apt-get install oathtool" >&2
+    exit 2
+  fi
 fi
 
 # Set up state file and check rate limiting BEFORE TOTP validation
@@ -183,30 +344,53 @@ if [ -f "$STATE_FILE" ]; then
   fi
 fi
 
-# Validate the code using oathtool
-EXPECTED=$(oathtool --totp -b "$SECRET" 2>/dev/null)
-if [ "$?" -ne 0 ]; then
-  echo "ERROR: Failed to generate TOTP. Check secret format (base32)." >&2
-  exit 2
-fi
+# Validate based on code type
+if [ "$CODE_TYPE" = "totp" ]; then
+  # Validate the TOTP code using oathtool
+  EXPECTED=$(oathtool --totp -b "$SECRET" 2>/dev/null)
+  if [ "$?" -ne 0 ]; then
+    echo "ERROR: Failed to generate TOTP. Check secret format (base32)." >&2
+    exit 2
+  fi
 
-if [ "$CODE" != "$EXPECTED" ]; then
-  # Try previous and next windows for clock skew
-  # Use relative time in seconds: -30 for previous window, +30 for next
-  NOW=$(date +%s)
-  EXPECTED_PREV=$(oathtool --totp -b "$SECRET" -N "@$((NOW - 30))" 2>/dev/null || true)
-  EXPECTED_NEXT=$(oathtool --totp -b "$SECRET" -N "@$((NOW + 30))" 2>/dev/null || true)
+  if [ "$CODE" != "$EXPECTED" ]; then
+    # Try previous and next windows for clock skew
+    NOW=$(date +%s)
+    EXPECTED_PREV=$(oathtool --totp -b "$SECRET" -N "@$((NOW - 30))" 2>/dev/null || true)
+    EXPECTED_NEXT=$(oathtool --totp -b "$SECRET" -N "@$((NOW + 30))" 2>/dev/null || true)
 
-  if [ "$CODE" != "$EXPECTED_PREV" ] && [ "$CODE" != "$EXPECTED_NEXT" ]; then
+    if [ "$CODE" != "$EXPECTED_PREV" ] && [ "$CODE" != "$EXPECTED_NEXT" ]; then
+      FAIL_NOW_MS=$(date +%s)000
+      record_failure "$USER_ID" "$FAIL_NOW_MS"
+      NEW_FAILURE_COUNT=$(jq -r --arg userId "$USER_ID" '.failureCounts[$userId].count // 0' "$STATE_FILE")
+      audit_log "VERIFY" "$USER_ID" "TOTP_FAIL"
+      run_failure_hook "VERIFY_FAIL" "$USER_ID" "$NEW_FAILURE_COUNT"
+      echo "❌ Invalid OTP code" >&2
+      exit 1
+    fi
+  fi
+
+elif [ "$CODE_TYPE" = "yubikey" ]; then
+  # Extract public ID for audit logging (first 12 characters)
+  YUBIKEY_PUBLIC_ID="${CODE:0:12}"
+
+  # Validate against Yubico API
+  validate_yubikey "$CODE" "$YUBIKEY_CLIENT_ID" "$YUBIKEY_SECRET_KEY"
+  YUBIKEY_RESULT=$?
+
+  if [ "$YUBIKEY_RESULT" -eq 2 ]; then
+    # Configuration/API error
+    exit 2
+  elif [ "$YUBIKEY_RESULT" -eq 1 ]; then
+    # Invalid OTP
     FAIL_NOW_MS=$(date +%s)000
     record_failure "$USER_ID" "$FAIL_NOW_MS"
-    # Get updated failure count for hook
     NEW_FAILURE_COUNT=$(jq -r --arg userId "$USER_ID" '.failureCounts[$userId].count // 0' "$STATE_FILE")
-    audit_log "VERIFY" "$USER_ID" "VERIFY_FAIL"
+    audit_log "VERIFY" "$USER_ID" "YUBIKEY_FAIL:$YUBIKEY_PUBLIC_ID"
     run_failure_hook "VERIFY_FAIL" "$USER_ID" "$NEW_FAILURE_COUNT"
-    echo "❌ Invalid OTP code" >&2
     exit 1
   fi
+  # YUBIKEY_RESULT=0 means success, continue to update state
 fi
 
 # Code is valid - update state
@@ -255,6 +439,15 @@ LOCK_FILE="$STATE_FILE.lock"
 
 ) 200>"$LOCK_FILE"
 
-audit_log "VERIFY" "$USER_ID" "VERIFY_SUCCESS"
-echo "✅ OTP verified for $USER_ID (valid for $INTERVAL_HOURS hours)"
+if [ "$CODE_TYPE" = "yubikey" ]; then
+  audit_log "VERIFY" "$USER_ID" "YUBIKEY_SUCCESS:$YUBIKEY_PUBLIC_ID"
+else
+  audit_log "VERIFY" "$USER_ID" "TOTP_SUCCESS"
+fi
+
+if [ "$CODE_TYPE" = "yubikey" ]; then
+  echo "✅ YubiKey verified for $USER_ID (valid for $INTERVAL_HOURS hours)"
+else
+  echo "✅ OTP verified for $USER_ID (valid for $INTERVAL_HOURS hours)"
+fi
 exit 0
