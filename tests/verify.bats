@@ -114,7 +114,7 @@ EOF
 
   [ "$status" -eq 2 ]
   [[ "$output" =~ "ERROR" ]]
-  [[ "$output" =~ "6 digits" ]]
+  [[ "$output" =~ "Invalid code format" ]]
 }
 
 @test "verify.sh: rejects OTP code with fewer than 6 digits" {
@@ -123,7 +123,7 @@ EOF
 
   [ "$status" -eq 2 ]
   [[ "$output" =~ "ERROR" ]]
-  [[ "$output" =~ "6 digits" ]]
+  [[ "$output" =~ "Invalid code format" ]]
 }
 
 @test "verify.sh: rejects OTP code with more than 6 digits" {
@@ -132,7 +132,7 @@ EOF
 
   [ "$status" -eq 2 ]
   [[ "$output" =~ "ERROR" ]]
-  [[ "$output" =~ "6 digits" ]]
+  [[ "$output" =~ "Invalid code format" ]]
 }
 
 @test "verify.sh: rejects OTP code with special characters" {
