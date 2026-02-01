@@ -296,14 +296,12 @@ echo "invalid json" > ~/.openclaw/memory/otp-state.json
 #!/bin/bash
 # In your sensitive-operation.sh
 
-# Source the OTP verification function
-source ~/.openclaw/skills/otp/verify.sh
-
+# Call the OTP verification script
 USER_ID="$1"
 OTP_CODE="$2"
 
 # Challenge user for identity verification
-if ! verify_otp "$USER_ID" "$OTP_CODE"; then
+if ! ~/.openclaw/skills/otp/verify.sh "$USER_ID" "$OTP_CODE"; then
   echo "🔒 This action requires identity verification"
   echo "Please provide your OTP code: /otp <6-digit-code>"
   exit 1
@@ -316,11 +314,9 @@ echo "✅ Identity verified. Proceeding with sensitive operation..."
 **Status Check Before Action:**
 ```bash
 #!/bin/bash
-source ~/.openclaw/skills/otp/check-status.sh
-
 USER_ID="$1"
 
-if check_otp_status "$USER_ID"; then
+if ~/.openclaw/skills/otp/check-status.sh "$USER_ID"; then
   echo "✅ User recently verified, proceeding..."
   # Perform action
 else
@@ -487,14 +483,9 @@ Your OpenClaw OTP Challenger skill is now installed and ready for use. The insta
 
 To use OTP verification in your existing skills:
 
-1. **Import the verification functions**:
+1. **Call the verification script** before sensitive operations:
    ```bash
-   source ~/.openclaw/skills/otp/verify.sh
-   ```
-
-2. **Add verification checks** before sensitive operations:
-   ```bash
-   if ! verify_otp "$USER_ID" "$OTP_CODE"; then
+   if ! ~/.openclaw/skills/otp/verify.sh "$USER_ID" "$OTP_CODE"; then
      echo "🔒 OTP verification required"
      exit 1
    fi
