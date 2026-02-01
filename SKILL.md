@@ -431,6 +431,30 @@ Think of OTP like `sudo`—you use it before commands that matter, not every com
 - First verification creates the file
 - Check `memory/` directory permissions
 
+### YubiKey Issues
+
+### "YUBIKEY_CLIENT_ID not set"
+- Get API credentials from https://upgrade.yubico.com/getapikey/
+- Set `YUBIKEY_CLIENT_ID` and `YUBIKEY_SECRET_KEY` in environment or config
+
+### "Invalid OTP" when getting API key
+- Your YubiKey may not be registered with Yubico's cloud
+- Use YubiKey Manager to reconfigure Slot 1 with "Upload to Yubico" checked
+
+### "YubiKey API signature mismatch"
+- Check that `YUBIKEY_SECRET_KEY` is correct (should be base64)
+- Try regenerating API credentials from Yubico
+
+### "Failed to contact Yubico API"
+- Check internet connectivity
+- Yubico API requires HTTPS (port 443)
+- Try: `curl -I https://api.yubico.com/wsapi/2.0/verify`
+
+### "YubiKey OTP already used"
+- Each YubiKey press generates a unique code
+- Touch your YubiKey again to generate a fresh code
+- Don't copy-paste old codes
+
 ## License
 
 MIT
