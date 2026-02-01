@@ -250,6 +250,10 @@ Set these in your OpenClaw config or environment:
 - **`OTP_MAX_FAILURES`** - Failed attempts before rate limiting (default: 3)
 - **`OTP_FAILURE_HOOK`** - Script/command to run on failures (see below)
 
+**YubiKey Configuration:**
+- **`YUBIKEY_CLIENT_ID`** - Yubico API client ID (required for YubiKey)
+- **`YUBIKEY_SECRET_KEY`** - Yubico API secret key (required for YubiKey)
+
 ## Security Considerations
 
 ### What This Protects Against
