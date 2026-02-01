@@ -140,6 +140,42 @@ if [ -z "$SECRET" ]; then
   exit 2
 fi
 
+# Get YubiKey credentials from environment or config
+YUBIKEY_CLIENT_ID="${YUBIKEY_CLIENT_ID:-}"
+YUBIKEY_SECRET_KEY="${YUBIKEY_SECRET_KEY:-}"
+
+if [ -z "$YUBIKEY_CLIENT_ID" ] && [ -f "$CONFIG_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    YUBIKEY_CLIENT_ID=$(python3 -c "
+import sys
+try:
+    import yaml
+    with open('$CONFIG_FILE', 'r') as f:
+        config = yaml.safe_load(f)
+    client_id = config.get('security', {}).get('yubikey', {}).get('clientId', '')
+    print(client_id if client_id else '')
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+fi
+
+if [ -z "$YUBIKEY_SECRET_KEY" ] && [ -f "$CONFIG_FILE" ]; then
+  if command -v python3 &>/dev/null; then
+    YUBIKEY_SECRET_KEY=$(python3 -c "
+import sys
+try:
+    import yaml
+    with open('$CONFIG_FILE', 'r') as f:
+        config = yaml.safe_load(f)
+    secret_key = config.get('security', {}).get('yubikey', {}).get('secretKey', '')
+    print(secret_key if secret_key else '')
+except Exception:
+    pass
+" 2>/dev/null)
+  fi
+fi
+
 # Validate secret format (base32: A-Z, 2-7, optional = padding, 16-128 chars)
 if [ "${#SECRET}" -lt 16 ] || [ "${#SECRET}" -gt 128 ]; then
   echo "ERROR: Secret length must be 16-128 characters" >&2
