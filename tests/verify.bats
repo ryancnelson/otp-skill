@@ -555,3 +555,66 @@ EOF
   # This requires mocking which is complex, skip for now
   skip "Requires PATH mocking"
 }
+
+# ============================================================================
+# YubiKey OTP Support Tests
+# ============================================================================
+
+@test "verify.sh: detects 6-digit code as TOTP" {
+  # This test verifies format detection, not validation
+  # A wrong TOTP code should fail with exit 1 (invalid), not exit 2 (format error)
+  run bash "$VERIFY_SCRIPT" "user1" "123456"
+  [ "$status" -eq 1 ]
+  [[ ! "$output" =~ "Invalid code format" ]]
+}
+
+@test "verify.sh: detects 44-char ModHex as YubiKey" {
+  # Valid ModHex format but no credentials configured
+  # Should fail with exit 2 (config error), not format error
+  unset YUBIKEY_CLIENT_ID
+  unset YUBIKEY_SECRET_KEY
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "YUBIKEY_CLIENT_ID not set" ]]
+}
+
+@test "verify.sh: rejects invalid code formats" {
+  # Too short
+  run bash "$VERIFY_SCRIPT" "user1" "12345"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "Invalid code format" ]]
+
+  # Too long for TOTP, too short for YubiKey
+  run bash "$VERIFY_SCRIPT" "user1" "1234567890"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "Invalid code format" ]]
+
+  # Invalid characters for ModHex (ModHex only uses cbdefghijklnrtuv)
+  run bash "$VERIFY_SCRIPT" "user1" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "Invalid code format" ]]
+}
+
+@test "verify.sh: accepts valid ModHex characters" {
+  # All valid ModHex characters: cbdefghijklnrtuv
+  # This should pass format check but fail on missing credentials
+  unset YUBIKEY_CLIENT_ID
+  run bash "$VERIFY_SCRIPT" "user1" "cbdefghijklnrtuvbdefghijklnrtuvbdefghijklnrt"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "YUBIKEY_CLIENT_ID not set" ]]
+  [[ ! "$output" =~ "Invalid code format" ]]
+}
+
+@test "verify.sh: rejects 43-char ModHex (too short)" {
+  # Exactly 43 chars - one short of valid YubiKey OTP
+  run bash "$VERIFY_SCRIPT" "user1" "ccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "Invalid code format" ]]
+}
+
+@test "verify.sh: rejects 45-char ModHex (too long)" {
+  # Exactly 45 chars - one more than valid YubiKey OTP
+  run bash "$VERIFY_SCRIPT" "user1" "ccccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "Invalid code format" ]]
+}
