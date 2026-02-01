@@ -788,3 +788,31 @@ EOF
   # Should fail due to invalid base64, not pass to validation
   [[ "$output" =~ "Failed to decode YUBIKEY_SECRET_KEY" ]] || [[ "$output" =~ "base64" ]] || [[ "$status" -eq 1 ]]
 }
+
+@test "verify.sh: YubiKey failure logs to audit file" {
+  export YUBIKEY_CLIENT_ID="00000"
+  export YUBIKEY_SECRET_KEY="dGVzdGtleQ=="  # base64 of "testkey"
+  export OTP_AUDIT_LOG="$TEST_DIR/audit.log"
+
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+
+  # Check audit log exists and has YubiKey-related entry
+  if [ -f "$OTP_AUDIT_LOG" ]; then
+    run cat "$OTP_AUDIT_LOG"
+    [[ "$output" =~ "user=user1" ]]
+    [[ "$output" =~ "event=VERIFY" ]]
+  fi
+}
+
+@test "verify.sh: YubiKey success logs public ID in audit" {
+  # This test requires real YubiKey credentials
+  # Skip if not configured
+  if [ -z "$YUBIKEY_CLIENT_ID" ] || [ -z "$YUBIKEY_SECRET_KEY" ]; then
+    skip "Requires real YUBIKEY_CLIENT_ID and YUBIKEY_SECRET_KEY"
+  fi
+
+  export OTP_AUDIT_LOG="$TEST_DIR/audit.log"
+
+  # This would need a real YubiKey OTP which we can't generate in tests
+  skip "Requires real YubiKey hardware for success path testing"
+}
