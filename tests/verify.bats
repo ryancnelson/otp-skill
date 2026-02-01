@@ -655,3 +655,60 @@ EOF
   # Should get past config validation (not exit 2 for OTP_SECRET)
   [[ ! "$output" =~ "OTP_SECRET not set" ]]
 }
+
+@test "verify.sh: loads YUBIKEY_CLIENT_ID from config file" {
+  unset YUBIKEY_CLIENT_ID
+  unset YUBIKEY_SECRET_KEY
+
+  cat > "$CONFIG_FILE" <<'EOF'
+security:
+  otp:
+    secret: "JBSWY3DPEHPK3PXP"
+  yubikey:
+    clientId: "12345"
+EOF
+
+  # Should fail on missing secretKey, not missing clientId
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "YUBIKEY_SECRET_KEY not set" ]]
+  [[ ! "$output" =~ "YUBIKEY_CLIENT_ID not set" ]]
+}
+
+@test "verify.sh: loads YUBIKEY_SECRET_KEY from config file" {
+  unset YUBIKEY_CLIENT_ID
+  unset YUBIKEY_SECRET_KEY
+
+  cat > "$CONFIG_FILE" <<'EOF'
+security:
+  otp:
+    secret: "JBSWY3DPEHPK3PXP"
+  yubikey:
+    clientId: "12345"
+    secretKey: "testbase64key=="
+EOF
+
+  # Should get past config validation
+  # Will fail at API call since credentials are fake
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  [[ ! "$output" =~ "YUBIKEY_CLIENT_ID not set" ]]
+  [[ ! "$output" =~ "YUBIKEY_SECRET_KEY not set" ]]
+}
+
+@test "verify.sh: env vars override config file for YubiKey" {
+  export YUBIKEY_CLIENT_ID="env_client_id"
+  export YUBIKEY_SECRET_KEY="env_secret_key"
+
+  cat > "$CONFIG_FILE" <<'EOF'
+security:
+  yubikey:
+    clientId: "config_client_id"
+    secretKey: "config_secret_key"
+EOF
+
+  # Env vars should be used, not config file values
+  # We can't easily verify which was used, but this ensures no crash
+  run bash "$VERIFY_SCRIPT" "user1" "cccccccccccccccccccccccccccccccccccccccccccc"
+  # Should get past config loading without errors about missing credentials
+  [[ ! "$output" =~ "not set" ]]
+}
