@@ -57,6 +57,7 @@ After installation, verify required dependencies:
 which jq && echo "✅ jq available" || echo "❌ Install: brew install jq"
 which python3 && echo "✅ python3 available" || echo "❌ Install: brew install python3"
 which oathtool && echo "✅ oathtool available" || echo "❌ Install: brew install oath-toolkit"
+which qrencode && echo "✅ qrencode available" || echo "⚠️  Optional: brew install qrencode (for QR codes)"
 ```
 
 **Note:** `oathtool` is optional - the skill includes a built-in TOTP generator, but `oathtool` provides additional validation.
@@ -74,9 +75,11 @@ cd ~/.openclaw/skills/otp
 ```
 
 This will display:
-- A QR code to scan with your authenticator app
+- A QR code to scan with your authenticator app (if `qrencode` is installed)
 - The base32 secret for manual entry
 - Configuration instructions
+
+**Note:** QR code display requires the `qrencode` utility. Install with `brew install qrencode` (macOS) or `apt install qrencode` (Ubuntu). Without it, you'll only see the base32 secret for manual entry.
 
 **Alternative:** Use any other TOTP secret generator. You need a **base32-encoded secret**.
 
@@ -392,6 +395,7 @@ No secrets are stored in state—only timestamps.
 - **python3** - for secure YAML config parsing
 
 **Optional:**
+- **qrencode** - displays QR code during secret generation (without it, you'll only get the base32 secret)
 - **oathtool** - provides additional TOTP validation (skill has built-in generator)
 - **Node.js** - only needed for `totp.mjs` standalone CLI
 - **bats** - for running test suite

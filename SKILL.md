@@ -70,7 +70,7 @@ Check if a user's verification is still valid.
 
 ### generate-secret.sh
 
-Generate a new TOTP secret with QR code.
+Generate a new TOTP secret with QR code (requires `qrencode` to be installed).
 
 ```bash
 ./generate-secret.sh <account_name>
