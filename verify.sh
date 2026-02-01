@@ -97,9 +97,11 @@ if [ -z "$USER_ID" ] || [ -z "$CODE" ]; then
   exit 2
 fi
 
-# Validate OTP code format (must be exactly 6 digits)
-if ! [[ "$CODE" =~ ^[0-9]{6}$ ]]; then
-  echo "ERROR: Code must be exactly 6 digits" >&2
+# Detect and validate code format
+CODE_TYPE=$(detect_code_type "$CODE")
+
+if [ "$CODE_TYPE" = "unknown" ]; then
+  echo "ERROR: Invalid code format. Expected 6-digit TOTP or 44-character YubiKey OTP" >&2
   exit 2
 fi
 
